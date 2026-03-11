@@ -13,11 +13,10 @@ URL_DASOL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPgj2WLYMx6eeQTFt9
 st.set_page_config(page_title="투자 대시보드", layout="centered", initial_sidebar_state="collapsed")
 
 # ==========================================================
-# 💡 [모바일 최적화 디자인] 가로 스크롤 방지 & 한눈에 쏙 들어오는 표 비율 고정!
+# 💡 [모바일 최적화 디자인] 가로 스크롤 방지 & 표 비율 고정
 # ==========================================================
 st.markdown("""
 <style>
-    /* 상하좌우 여백 극단적 축소 */
     .block-container {
         padding: 1.5rem 0.5rem 1rem 0.5rem !important;
         max-width: 100% !important;
@@ -31,12 +30,11 @@ st.markdown("""
         margin-bottom: 0.5rem !important;
     }
     
-    /* 💡 가로 스크롤을 완벽히 없애는 비율 고정 표 */
     .mobile-table {
         width: 100%;
-        table-layout: fixed; /* 전체 너비를 100%로 고정하고 비율대로 나눔 */
+        table-layout: fixed; 
         border-collapse: collapse;
-        font-size: 11px !important; /* 모바일에 딱 맞는 콤팩트한 글씨 크기 */
+        font-size: 11px !important; 
         margin-top: 10px;
     }
     .mobile-table th {
@@ -55,32 +53,16 @@ st.markdown("""
         text-overflow: ellipsis;
     }
     
-    /* 열별 너비 및 정렬 설정 (합계 100%) */
-    /* 1. 종목 (자동 줄바꿈 허용으로 길어도 안 짤림) */
     .mobile-table th:nth-child(1), .mobile-table td:nth-child(1) { 
         width: 38%; 
         text-align: left !important; 
         white-space: normal !important; 
         word-break: keep-all; 
     }
-    /* 2. 목표 */
-    .mobile-table th:nth-child(2), .mobile-table td:nth-child(2) { 
-        width: 11%; 
-        text-align: center !important; 
-    }
-    /* 3. 현재 */
-    .mobile-table th:nth-child(3), .mobile-table td:nth-child(3) { 
-        width: 13%; 
-        text-align: center !important; 
-    }
-    /* 4. 수익% */
-    .mobile-table th:nth-child(4), .mobile-table td:nth-child(4) { 
-        width: 15%; 
-    }
-    /* 5. 수익금 (가장 우측) */
-    .mobile-table th:nth-child(5), .mobile-table td:nth-child(5) { 
-        width: 23%; 
-    }
+    .mobile-table th:nth-child(2), .mobile-table td:nth-child(2) { width: 11%; text-align: center !important; }
+    .mobile-table th:nth-child(3), .mobile-table td:nth-child(3) { width: 13%; text-align: center !important; }
+    .mobile-table th:nth-child(4), .mobile-table td:nth-child(4) { width: 15%; }
+    .mobile-table th:nth-child(5), .mobile-table td:nth-child(5) { width: 23%; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,7 +76,7 @@ def toggle_user():
     else:
         st.session_state.current_user = "희상"
 
-# 3. 데이터 로딩 (캐시를 60초로 짧게 줄여서 nan 현상 방지)
+# 3. 데이터 로딩 (캐시 60초)
 @st.cache_data(ttl=60)
 def load_google_sheet_data(user):
     target_url = URL_HEESANG if user == "희상" else URL_DASOL
@@ -124,36 +106,41 @@ try:
     df_raw = load_google_sheet_data(st.session_state.current_user)
     
     # ==========================================================
-    # 💡 [핵심 해결] C열(VIX), J열(나스닥)에서 '진짜 숫자'만 똑똑하게 찾기!
+    # 💡 [핵심 해결] 구글 시트의 1번째 줄(C1, J1)과 2번째 줄(C2, J2)을 모두 스캔하여 확실하게 숫자를 낚아챕니다!
     # ==========================================================
+    # 1. VIX 찾기 (C열 = 인덱스 2)
     vix = 0.0
     vix_str = "0"
-    for r in range(min(3, len(df_raw))):  # 상위 3줄 스캔
-        temp = str(df_raw.iloc[r, 2]).replace(',', '').strip()
-        if temp.lower() not in ["nan", "none", ""]:
-            try:
+    for r in [0, 1]:  # 파이썬 인덱스 0(첫 번째 줄), 1(두 번째 줄) 순차 확인
+        try:
+            temp = str(df_raw.iloc[r, 2]).replace(',', '').strip()
+            if temp.lower() not in ["nan", "none", ""]:
                 vix = float(temp)
                 vix_str = temp
-                break
-            except: pass
+                break # 진짜 숫자를 찾으면 탐색 종료!
+        except:
+            pass
 
+    # 2. 나스닥 하락률 찾기 (J열 = 인덱스 9)
     ndx = 0.0
     ndx_str = "0%"
-    for r in range(min(3, len(df_raw))):  # 상위 3줄 스캔
-        temp = str(df_raw.iloc[r, 9]).strip()
-        if temp.lower() not in ["nan", "none", ""]:
-            try:
+    for r in [0, 1]:
+        try:
+            temp = str(df_raw.iloc[r, 9]).strip()
+            if temp.lower() not in ["nan", "none", ""]:
                 ndx = float(temp.replace('%', ''))
                 ndx_str = temp
-                break
-            except: pass
+                break # 진짜 숫자를 찾으면 탐색 종료!
+        except:
+            pass
 
+    # 시장 지표 색상 입히기
     vix_c = "#1e8e3e" if vix < 20 else "#b8860b" if vix < 30 else "#d95f02" if vix < 40 else "#8b0000"
     ndx_c = "#1e8e3e" if ndx > -20 else "#d4ac0d" if ndx > -30 else "#b8860b" if ndx > -40 else "#ff8c00" if ndx > -50 else "#d95f02" if ndx > -60 else "#ea4335" if ndx > -70 else "#8b0000"
 
     st.markdown(f"**VIX:** <span style='color:{vix_c}'>{vix_str}</span> &nbsp; | &nbsp; **나스닥 하락:** <span style='color:{ndx_c}'>{ndx_str}</span>", unsafe_allow_html=True)
     
-    # 데이터 추출 및 짧은 이름 적용
+    # 데이터 표 정리
     data = []
     row_indices = [23] + list(range(4, 23))
     
@@ -173,10 +160,10 @@ try:
         upper_val = clean_value(df_raw.iloc[row_idx, 20])
         
         data.append({
-            "종목": c_val,        # (기존: 종목명 -> 종목) 모바일 공간 확보
-            "목표": d_val,        # (기존: 목표비중 -> 목표)
-            "현재": e_val,        # (기존: 현재비중 -> 현재)
-            "수익%": j_val,       # (기존: 수익률 -> 수익%)
+            "종목": c_val,
+            "목표": d_val,
+            "현재": e_val,
+            "수익%": j_val,
             "수익금": k_val,
             "하한선": lower_val,
             "상한선": upper_val,
@@ -186,7 +173,6 @@ try:
         
     df_disp = pd.DataFrame(data)
 
-    # 색상 조건 설정
     def apply_styles(row):
         styles = [''] * len(row)
         is_total = row['is_total']
@@ -213,7 +199,6 @@ try:
         if bg_color:
             styles[2] = f'background-color: {bg_color}; color: {fg_color}; font-weight: bold;' 
             
-        # 3(수익%), 4(수익금) 색상
         for i in [3, 4]:
             val = str(row.iloc[i])
             if val:
@@ -224,9 +209,7 @@ try:
                     
         return styles
 
-    # ==========================================================
-    # 💡 [핵심] 가로 스크롤 완전 삭제 - HTML 테이블 변환
-    # ==========================================================
+    # HTML 테이블 변환 적용
     styled_df = df_disp.style.apply(apply_styles, axis=1) \
                      .hide(["하한선", "상한선", "excel_row", "is_total"], axis=1) \
                      .hide(axis="index")
