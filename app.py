@@ -9,15 +9,15 @@ import io
 URL_HEESANG = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPgj2WLYMx6eeQTFt9ChqKL3NykgNUpxrjWrDxQCrPw98fLN9OnpfipptOyugxzmHWh9tZNOZViYhI/pub?gid=368982410&single=true&output=csv"
 URL_DASOL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPgj2WLYMx6eeQTFt9ChqKL3NykgNUpxrjWrDxQCrPw98fLN9OnpfipptOyugxzmHWh9tZNOZViYhI/pub?gid=573600297&single=true&output=csv"
 
-# 1. 페이지 설정 (넓게 쓰기 모드 추가)
+# 1. 페이지 설정 (넓게 쓰기 모드)
 st.set_page_config(page_title="투자 대시보드", layout="centered", initial_sidebar_state="collapsed")
 
 # ==========================================================
-# 💡 [모바일 최적화 디자인 주입] 상하좌우 여백을 줄이고 폰트 크기를 맞춥니다.
+# 💡 [모바일 최적화 디자인] 여백 축소 및 '한눈에 들어오는 표' 강제 적용
 # ==========================================================
 st.markdown("""
 <style>
-    /* 전체 페이지 상하좌우 여백 극단적 축소 */
+    /* 상하좌우 여백 극단적 축소 */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 1rem !important;
@@ -25,26 +25,46 @@ st.markdown("""
         padding-right: 0.5rem !important;
         max-width: 100% !important;
     }
-    /* 버튼 크기 및 여백 축소 */
     div[data-testid="stButton"] button {
         padding: 0.2rem 0.5rem !important;
-        font-size: 12px !important;
+        font-size: 13px !important;
     }
-    /* 헤더(제목) 크기 축소 */
-    h1 {
-        font-size: 1.5rem !important;
-        margin-bottom: 0rem !important;
-        padding-bottom: 0.5rem !important;
-    }
-    /* VIX/나스닥 텍스트 크기 조절 */
     .stMarkdown p {
         font-size: 13px !important;
         margin-bottom: 0.5rem !important;
     }
+    
+    /* 💡 가로 스크롤을 없애는 마법의 모바일 전용 표 디자인 */
+    .mobile-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px !important; /* 모바일에 딱 맞는 글씨 크기 */
+        margin-top: 10px;
+    }
+    .mobile-table th {
+        background-color: #f0f2f6;
+        color: #333;
+        text-align: center !important;
+        padding: 6px 2px;
+        border-bottom: 2px solid #ccc;
+        white-space: nowrap;
+    }
+    .mobile-table td {
+        padding: 6px 2px;
+        text-align: right;
+        border-bottom: 1px solid #eee;
+        white-space: nowrap; /* 숫자는 줄바꿈 안 됨 */
+    }
+    /* 1번째 열(종목명)은 왼쪽 정렬하고, 글자가 길면 알아서 줄바꿈 되도록 허용! */
+    .mobile-table td:nth-child(1) {
+        text-align: left !important;
+        white-space: normal !important; 
+        word-break: keep-all;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# 2. 현재 사용자 저장소 (희상 <-> 다솔 스위칭용)
+# 2. 현재 사용자 스위칭
 if 'current_user' not in st.session_state:
     st.session_state.current_user = "희상"
 
@@ -54,7 +74,7 @@ def toggle_user():
     else:
         st.session_state.current_user = "희상"
 
-# 3. 데이터 로딩 함수 (5분 캐싱)
+# 3. 데이터 로딩 (5분 캐싱)
 @st.cache_data(ttl=300)
 def load_google_sheet_data(user):
     target_url = URL_HEESANG if user == "희상" else URL_DASOL
@@ -83,16 +103,18 @@ with col2:
 try:
     df_raw = load_google_sheet_data(st.session_state.current_user)
     
-    # VIX / 나스닥 추출
+    # ==========================================================
+    # 💡 [에러 해결] PC 위젯과 똑같이 C2(iloc[1,2]), J2(iloc[1,9]) 강제 지정
+    # ==========================================================
     try:
-        vix_str = str(df_raw.iloc[0, 2]).replace(',', '').strip()
+        vix_str = str(df_raw.iloc[1, 2]).replace(',', '').strip()
         vix = float(vix_str)
     except:
         vix = 0.0
         vix_str = "0"
 
     try:
-        ndx_str = str(df_raw.iloc[0, 9]).strip()
+        ndx_str = str(df_raw.iloc[1, 9]).strip()
         ndx = float(ndx_str.replace('%', ''))
     except:
         ndx = 0.0
@@ -103,7 +125,7 @@ try:
 
     st.markdown(f"**VIX:** <span style='color:{vix_c}'>{vix_str}</span> &nbsp; | &nbsp; **나스닥 하락:** <span style='color:{ndx_c}'>{ndx_str}</span>", unsafe_allow_html=True)
     
-    # 5. 구글 시트 데이터 표 그리기
+    # 데이터 추출
     data = []
     row_indices = [23] + list(range(4, 23))
     
@@ -126,7 +148,7 @@ try:
             "종목명": c_val,
             "목표": d_val,
             "현재": e_val,
-            "수익율": j_val,
+            "수익률": j_val,
             "수익금": k_val,
             "하한선": lower_val,
             "상한선": upper_val,
@@ -136,23 +158,21 @@ try:
         
     df_disp = pd.DataFrame(data)
 
+    # 색상 조건 설정
     def apply_styles(row):
         styles = [''] * len(row)
         is_total = row['is_total']
         excel_row = row['excel_row']
         
-        # 폰트 크기를 모바일용(12px)으로 약간 줄여서 적용합니다.
-        base_style = "font-size: 12px; "
-        
         if is_total:
-            return [base_style + 'background-color: #fff2cc; font-weight: bold; color: black;'] * len(row)
+            return ['background-color: #fff2cc; font-weight: bold; color: black;'] * len(row)
             
         bg_color, fg_color = "", ""
         if (6 <= excel_row <= 12) or (14 <= excel_row <= 22):
             try:
-                curr = float(row['현재'].replace('%', '').strip())
-                low_v = row['하한선']
-                up_v = row['상한선']
+                curr = float(str(row['현재']).replace('%', '').strip())
+                low_v = str(row['하한선'])
+                up_v = str(row['상한선'])
                 if low_v and up_v:
                     low_b = float(low_v.replace('%', '').strip())
                     up_b = float(up_v.replace('%', '').strip())
@@ -163,35 +183,31 @@ try:
             except:
                 pass
         
-        for i in range(len(row)):
-            styles[i] = base_style
-
         if bg_color:
-            styles[2] += f'background-color: {bg_color}; color: {fg_color};' 
+            styles[2] = f'background-color: {bg_color}; color: {fg_color}; font-weight: bold;' 
             
+        # 3(수익률), 4(수익금) 색상
         for i in [3, 4]:
-            val = row.iloc[i]
+            val = str(row.iloc[i])
             if val:
                 if "-" in val:
-                    styles[i] += 'color: #1a73e8;'
+                    styles[i] = 'color: #1a73e8;'
                 elif val not in ["0", "0.00%", "0.0%"]:
-                    styles[i] += 'color: #d93025;'
+                    styles[i] = 'color: #d93025;'
                     
         return styles
 
-    styled_df = df_disp.style.apply(apply_styles, axis=1)
+    # ==========================================================
+    # 💡 [핵심] 가로 스크롤 없는 HTML 표로 렌더링 (st.dataframe 대신 사용)
+    # ==========================================================
+    # 1. 디자인 입히기 및 불필요한 열 숨기기
+    styled_df = df_disp.style.apply(apply_styles, axis=1) \
+                     .hide(["하한선", "상한선", "excel_row", "is_total"], axis=1) \
+                     .hide(axis="index")
 
-    st.dataframe(
-        styled_df,
-        column_config={
-            "하한선": None,
-            "상한선": None,
-            "excel_row": None,
-            "is_total": None
-        },
-        hide_index=True,
-        use_container_width=True
-    )
+    # 2. HTML로 변환 후 모바일용 CSS 클래스(mobile-table) 연결
+    html_table = styled_df.to_html(table_attributes='class="mobile-table"')
+    st.markdown(html_table, unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"데이터 로드 오류: {e}")
