@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
 import requests
 import io
 
@@ -10,8 +9,40 @@ import io
 URL_HEESANG = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPgj2WLYMx6eeQTFt9ChqKL3NykgNUpxrjWrDxQCrPw98fLN9OnpfipptOyugxzmHWh9tZNOZViYhI/pub?gid=368982410&single=true&output=csv"
 URL_DASOL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPgj2WLYMx6eeQTFt9ChqKL3NykgNUpxrjWrDxQCrPw98fLN9OnpfipptOyugxzmHWh9tZNOZViYhI/pub?gid=573600297&single=true&output=csv"
 
-# 1. 모바일 화면에 맞춘 페이지 설정
+# 1. 페이지 설정 (넓게 쓰기 모드 추가)
 st.set_page_config(page_title="투자 대시보드", layout="centered", initial_sidebar_state="collapsed")
+
+# ==========================================================
+# 💡 [모바일 최적화 디자인 주입] 상하좌우 여백을 줄이고 폰트 크기를 맞춥니다.
+# ==========================================================
+st.markdown("""
+<style>
+    /* 전체 페이지 상하좌우 여백 극단적 축소 */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        max-width: 100% !important;
+    }
+    /* 버튼 크기 및 여백 축소 */
+    div[data-testid="stButton"] button {
+        padding: 0.2rem 0.5rem !important;
+        font-size: 12px !important;
+    }
+    /* 헤더(제목) 크기 축소 */
+    h1 {
+        font-size: 1.5rem !important;
+        margin-bottom: 0rem !important;
+        padding-bottom: 0.5rem !important;
+    }
+    /* VIX/나스닥 텍스트 크기 조절 */
+    .stMarkdown p {
+        font-size: 13px !important;
+        margin-bottom: 0.5rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # 2. 현재 사용자 저장소 (희상 <-> 다솔 스위칭용)
 if 'current_user' not in st.session_state:
@@ -23,14 +54,7 @@ def toggle_user():
     else:
         st.session_state.current_user = "희상"
 
-# 3. 데이터 로딩 함수 (5분마다 알아서 새로고침 되도록 캐싱 적용)
-@st.cache_data(ttl=300)
-def fetch_market_data():
-    vix_price = yf.Ticker("^VIX").history(period="1d")['Close'].iloc[-1]
-    ndx_hist = yf.Ticker("^IXIC").history(period="max")
-    ndx_mdd = ((ndx_hist['Close'].iloc[-1] - ndx_hist['High'].max()) / ndx_hist['High'].max()) * 100
-    return vix_price, ndx_mdd
-
+# 3. 데이터 로딩 함수 (5분 캐싱)
 @st.cache_data(ttl=300)
 def load_google_sheet_data(user):
     target_url = URL_HEESANG if user == "희상" else URL_DASOL
@@ -49,32 +73,37 @@ def clean_value(val):
 # --- UI 화면 그리기 ---
 st.title(f"👤 {st.session_state.current_user} 대시보드")
 
-# 전환 및 새로고침 버튼
 col1, col2 = st.columns(2)
 with col1:
-    st.button("🔄 최신 데이터 불러오기", on_click=st.cache_data.clear, use_container_width=True)
+    st.button("🔄 최신화", on_click=st.cache_data.clear, use_container_width=True)
 with col2:
     other_user = "다솔" if st.session_state.current_user == "희상" else "희상"
-    st.button(f"{other_user} 대시보드로 전환", on_click=toggle_user, use_container_width=True)
+    st.button(f"➡️ {other_user} 전환", on_click=toggle_user, use_container_width=True)
 
-# 시장 지표 (VIX, 나스닥) 표시
-try:
-    vix, ndx = fetch_market_data()
-    
-    # 색상 결정 로직
-    vix_c = "#1e8e3e" if vix < 20 else "#b8860b" if vix < 30 else "#d95f02" if vix < 40 else "#8b0000"
-    ndx_c = "#1e8e3e" if ndx > -20 else "#d4ac0d" if ndx > -30 else "#b8860b" if ndx > -40 else "#ff8c00" if ndx > -50 else "#d95f02" if ndx > -60 else "#ea4335" if ndx > -70 else "#8b0000"
-
-    st.markdown(f"**VIX:** <span style='color:{vix_c}'>{vix:.2f}</span> &nbsp; | &nbsp; **나스닥 고점대비:** <span style='color:{ndx_c}'>{ndx:.2f}%</span>", unsafe_allow_html=True)
-except:
-    st.warning("시장 데이터를 불러오지 못했습니다.")
-
-st.divider() # 구분선
-
-# 구글 시트 데이터 표 그리기
 try:
     df_raw = load_google_sheet_data(st.session_state.current_user)
     
+    # VIX / 나스닥 추출
+    try:
+        vix_str = str(df_raw.iloc[0, 2]).replace(',', '').strip()
+        vix = float(vix_str)
+    except:
+        vix = 0.0
+        vix_str = "0"
+
+    try:
+        ndx_str = str(df_raw.iloc[0, 9]).strip()
+        ndx = float(ndx_str.replace('%', ''))
+    except:
+        ndx = 0.0
+        ndx_str = "0%"
+
+    vix_c = "#1e8e3e" if vix < 20 else "#b8860b" if vix < 30 else "#d95f02" if vix < 40 else "#8b0000"
+    ndx_c = "#1e8e3e" if ndx > -20 else "#d4ac0d" if ndx > -30 else "#b8860b" if ndx > -40 else "#ff8c00" if ndx > -50 else "#d95f02" if ndx > -60 else "#ea4335" if ndx > -70 else "#8b0000"
+
+    st.markdown(f"**VIX:** <span style='color:{vix_c}'>{vix_str}</span> &nbsp; | &nbsp; **나스닥 하락:** <span style='color:{ndx_c}'>{ndx_str}</span>", unsafe_allow_html=True)
+    
+    # 5. 구글 시트 데이터 표 그리기
     data = []
     row_indices = [23] + list(range(4, 23))
     
@@ -107,17 +136,17 @@ try:
         
     df_disp = pd.DataFrame(data)
 
-    # 엑셀의 조건부 서식을 웹사이트용으로 번역하는 함수
     def apply_styles(row):
         styles = [''] * len(row)
         is_total = row['is_total']
         excel_row = row['excel_row']
         
-        # 합계 줄 디자인
+        # 폰트 크기를 모바일용(12px)으로 약간 줄여서 적용합니다.
+        base_style = "font-size: 12px; "
+        
         if is_total:
-            return ['background-color: #fff2cc; font-weight: bold; color: black;'] * len(row)
+            return [base_style + 'background-color: #fff2cc; font-weight: bold; color: black;'] * len(row)
             
-        # 비중 상/하한선 알람 디자인
         bg_color, fg_color = "", ""
         if (6 <= excel_row <= 12) or (14 <= excel_row <= 22):
             try:
@@ -134,24 +163,24 @@ try:
             except:
                 pass
         
+        for i in range(len(row)):
+            styles[i] = base_style
+
         if bg_color:
-            styles[2] = f'background-color: {bg_color}; color: {fg_color};' # 현재 비중 열
+            styles[2] += f'background-color: {bg_color}; color: {fg_color};' 
             
-        # 수익률(3) 및 수익금(4) 색상 (음수 파랑, 양수 빨강)
         for i in [3, 4]:
             val = row.iloc[i]
             if val:
                 if "-" in val:
-                    styles[i] = 'color: #1a73e8;'
+                    styles[i] += 'color: #1a73e8;'
                 elif val not in ["0", "0.00%", "0.0%"]:
-                    styles[i] = 'color: #d93025;'
+                    styles[i] += 'color: #d93025;'
                     
         return styles
 
-    # 디자인 적용
     styled_df = df_disp.style.apply(apply_styles, axis=1)
 
-    # 불필요한 계산용 열(하한, 상한 등)은 모바일 화면에서 숨기고 출력합니다.
     st.dataframe(
         styled_df,
         column_config={
