@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import io
-import yfinance as yf  # 💡 [추가] 0.1초 만에 VIX 지표를 가져오기 위한 마법의 도구!
+import yfinance as yf
 
 # ==========================================================
 # 💡 [설정] 구글 시트 URL
@@ -14,7 +14,7 @@ URL_DASOL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSPgj2WLYMx6eeQTFt9
 st.set_page_config(page_title="투자 대시보드", layout="centered", initial_sidebar_state="collapsed")
 
 # ==========================================================
-# 💡 [모바일 최적화 디자인] 가로 스크롤 방지 & 표 비율 고정
+# 💡 [모바일 최적화 디자인]
 # ==========================================================
 st.markdown("""
 <style>
@@ -77,7 +77,7 @@ def toggle_user():
     else:
         st.session_state.current_user = "희상"
 
-# 3. 데이터 로딩 (캐시 60초) - 구글 시트는 포트폴리오 전체를 가져옵니다.
+# 3. 데이터 로딩 (캐시 60초)
 @st.cache_data(ttl=60)
 def load_google_sheet_data(user):
     target_url = URL_HEESANG if user == "희상" else URL_DASOL
@@ -87,7 +87,7 @@ def load_google_sheet_data(user):
     csv_data = io.StringIO(response.text)
     return pd.read_csv(csv_data, header=None, names=range(30))
 
-# 4. 야후 파이낸스 데이터 로딩 (캐시 60초) - VIX 전용 초고속 로딩 (나스닥 삭제)
+# 4. 야후 파이낸스 데이터 로딩 (캐시 60초) - VIX 전용
 @st.cache_data(ttl=60)
 def fetch_market_data():
     try:
@@ -115,45 +115,32 @@ with col2:
 try:
     df_raw = load_google_sheet_data(st.session_state.current_user)
     
-    # ==========================================================
-    # 💡 [핵심 해결] VIX는 야후에서 즉시, 나스닥은 구글 시트에서 스마트하게 가져옵니다.
-    # ==========================================================
+    # 💡 VIX 야후 파이낸스 로딩
     vix = fetch_market_data()
     vix_str = f"{vix:.2f}"
     vix_c = "#1e8e3e" if vix < 20 else "#b8860b" if vix < 30 else "#d95f02" if vix < 40 else "#8b0000"
 
-    # [나스닥 하락율 스마트 추출 (에러 방지)]
-    ndx_str = ""
+    # ==========================================================
+    # 💡 [핵심 해결] 무조건 J2 셀(iloc[1, 9])의 값을 직접 빼옵니다.
+    # ==========================================================
     try:
-        # 1. 시트 윗부분을 뒤져서 '나스닥' 라벨을 찾고 바로 오른쪽 값을 가져오기
-        for r in range(5):
-            for c in range(15):
-                cell_text = str(df_raw.iloc[r, c]).strip()
-                if "나스닥" in cell_text and "하락" in cell_text:
-                    ndx_str = str(df_raw.iloc[r, c+1]).strip()
-                    break
-            if ndx_str:
-                break
+        # 데이터프레임의 2번째 줄(인덱스 1), 10번째 칸(인덱스 9) = J2셀
+        ndx_str = str(df_raw.iloc[1, 9]).strip()
         
-        # 2. 못 찾았다면 강제로 기존 J2(1, 9) 위치 확인
-        if not ndx_str or ndx_str.lower() in ['nan', 'none', '']:
-            ndx_str = str(df_raw.iloc[1, 9]).strip() 
-            if ndx_str.lower() in ['nan', 'none', '']:
-                ndx_str = str(df_raw.iloc[0, 9]).strip()
-        
-        # 3. 색상 판별
+        # 만약 빈칸으로 불러와진다면 기본값 처리
+        if ndx_str.lower() in ['nan', 'none', '']:
+            ndx_str = "0.00%"
+            
         try:
+            # 퍼센트 기호 떼고 숫자로 변환하여 색상 부여
             ndx_val = float(ndx_str.replace('%', '').replace(',', '').strip())
             ndx_c = "#1e8e3e" if ndx_val > -20 else "#d4ac0d" if ndx_val > -30 else "#b8860b" if ndx_val > -40 else "#ff8c00" if ndx_val > -50 else "#d95f02" if ndx_val > -60 else "#ea4335" if ndx_val > -70 else "#8b0000"
         except ValueError:
-            ndx_c = "#333333" # 변환 실패 시 어두운 회색
+            ndx_c = "#333333" 
             
     except Exception:
-        ndx_str = "확인 불가"
+        ndx_str = "J2 로드 실패"
         ndx_c = "#d93025"
-
-    if not ndx_str:
-        ndx_str = "확인 불가"
 
     # 지표 화면에 출력
     st.markdown(f"**VIX:** <span style='color:{vix_c}'>{vix_str}</span> &nbsp; | &nbsp; **나스닥 하락:** <span style='color:{ndx_c}'>{ndx_str}</span>", unsafe_allow_html=True)
